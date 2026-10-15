@@ -1,72 +1,73 @@
 
-import json
-from pathlib import Path
-
-import numpy as np
 import streamlit as st
 import tensorflow as tf
+import numpy as np
 from PIL import Image
-
-# Page settings
+from pathlib import Path
 st.set_page_config(
     page_title="Smart Waste Classification",
-    page_icon="♻️",
-    layout="centered"
+    page_icon="♻️"
 )
 
-st.title("♻️ Smart Waste Classification")
-st.write(
-    "Upload a waste image and let the CNN model "
-    "predict its category."
-)
+st.title("Smart Waste Classification ♻️")
+st.write("Upload a waste image to predict its category.")
 
+# Model location
 MODEL_PATH = Path(__file__).parent / "waste_classification_model.keras"
-LABEL_PATH = Path(__file__).parent / "class_names.json"
 
-# Load the trained CNN
+# Keep the training class order
+class_names = [
+    "cardboard",
+    "glass",
+    "metal",
+    "paper",
+    "plastic",
+    "trash"
+]
+
+# Load the CNN model
 @st.cache_resource
 def load_model():
     return tf.keras.models.load_model(MODEL_PATH)
 
-model = load_model()
+if not MODEL_PATH.exists():
+    st.error("Model file is missing. Upload waste_classification_model.keras.")
+    st.stop()
 
-# Load class labels
-with open(LABEL_PATH, "r") as file:
-    class_names = json.load(file)
+try:
+    model = load_model()
+    st.success("Model loaded successfully!")
+except Exception as e:
+    st.error(f"Model loading error: {e}")
+    st.stop()
 
-# Image upload
+# Upload image
 uploaded_file = st.file_uploader(
     "Choose a waste image",
     type=["jpg", "jpeg", "png"]
 )
 
-if uploaded_file is not None:
+if uploaded_file:
     image = Image.open(uploaded_file).convert("RGB")
+    st.image(image, caption="Your uploaded image", width=300)
 
-    st.image(
-        image,
-        caption="Uploaded Waste Image",
-        width=300
-    )
-
-    if st.button("Predict Waste Category"):
-        # Prepare image exactly as during training
+    if st.button("Predict"):
         image = image.resize((128, 128))
         image_array = np.array(image, dtype=np.float32) / 255.0
         image_array = np.expand_dims(image_array, axis=0)
 
-        # Predict category
         predictions = model.predict(image_array, verbose=0)[0]
-        predicted_index = int(np.argmax(predictions))
-        predicted_class = class_names[predicted_index]
-        confidence = float(predictions[predicted_index]) * 100
+
+        if len(predictions) != len(class_names):
+            st.error("Model classes do not match the class list.")
+            st.stop()
+
+        index = int(np.argmax(predictions))
 
         st.success(
-            f"Predicted Category: {predicted_class.title()}"
+            f"Predicted Category: {class_names[index].title()}"
         )
-        st.metric("Prediction Score", f"{confidence:.2f}%")
-
-        st.subheader("Category Scores")
-        for index, name in enumerate(class_names):
-            st.write(f"{name.title()}: {predictions[index] * 100:.2f}%")
-            st.progress(float(predictions[index]))
+        st.metric(
+            "Confidence",
+            f"{float(predictions[index]) * 100:.2f}%"
+        )
